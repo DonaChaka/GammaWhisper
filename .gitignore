@@ -1,0 +1,23 @@
+# Virtual environment
+.venv/
+
+# VSCode settings
+.vscode/
+
+# Runtime files
+app/transcripts/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build artifacts
+*.log
+*.tmp
+build/
+dist/
+
+# Git files
+*.git
