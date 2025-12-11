@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import os
+import whisper
 
 """
 Builds GammaWhisper executable using PyInstaller.
@@ -26,8 +27,7 @@ flask_gui_path = os.path.join(current_dir, "flask_gui")
 models_path = os.path.join(flask_gui_path, "models")
 
 # Locate Whisper assets inside site-packages
-# Adjust if your venv path differs
-import whisper
+# Adjust if venv path differs
 whisper_assets_path = os.path.join(os.path.dirname(whisper.__file__), "assets")
 
 
@@ -60,6 +60,8 @@ command = [
     f"--add-data={os.path.join(models_path, 'base.en.pt')}{os.pathsep}models",
     f"--add-data={os.path.join(models_path, 'small.en.pt')}{os.pathsep}models",
     f"--add-data={os.path.join(models_path, 'tiny.en.pt')}{os.pathsep}models",
+    f"--add-data={os.path.join(models_path, 'medium.pt')}{os.pathsep}models",
+    f"--add-data={os.path.join(models_path, 'large-v3-turbo.pt')}{os.pathsep}models",
 
     # Include Whisper assets (mel_filters.npz etc.)
     f"--add-data={whisper_assets_path}{os.pathsep}whisper/assets",
