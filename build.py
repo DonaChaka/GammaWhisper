@@ -47,13 +47,8 @@ command = [
     "--icon", icon_path,
     "--paths", flask_gui_path,
 
-    # Include template folder
     f"--add-data={os.path.join(flask_gui_path, 'templates')}{os.pathsep}templates",
-
-    # Include static folder
     f"--add-data={os.path.join(flask_gui_path, 'static')}{os.pathsep}static",
-
-    # Include transcripts folder
     f"--add-data={os.path.join(flask_gui_path, 'transcripts')}{os.pathsep}transcripts",
 
     # Include Whisper models
