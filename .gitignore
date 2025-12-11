@@ -5,7 +5,7 @@
 .vscode/
 
 # Runtime files
-app/transcripts/
+flask_gui/transcripts/
 
 # Python cache
 __pycache__/
@@ -21,3 +21,6 @@ dist/
 
 # Git files
 *.git
+
+# Remove model
+models/

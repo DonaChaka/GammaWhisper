@@ -11,11 +11,12 @@ import requests
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
+from functools import partial
 
 from PyQt5 import QtWidgets, QtCore, QtWebEngineWidgets, QtGui
 
 # -------------------------------------------------------------------
-# GLOBAL HOTKEY VALUES
+# GLOBAL HOTKEYS
 # -------------------------------------------------------------------
 user32 = ctypes.windll.user32
 HOTKEY_ID = 1
@@ -33,14 +34,14 @@ from flask_gui.server import app  # noqa: E402
 
 
 # -------------------------------------------------------------------
-# FLASK SERVER
+# FLASK SERVER THREAD
 # -------------------------------------------------------------------
 def start_flask():
     app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
 
 
 # -------------------------------------------------------------------
-# AUDIO GLOBALS
+# AUDIO CAPTURE
 # -------------------------------------------------------------------
 is_recording = False
 stream = None
@@ -48,7 +49,6 @@ buffer = []
 samplerate = 16000
 channels = 1
 
-# Use secure temp directory instead of write-protected PyInstaller folder
 temp_path = os.path.join(tempfile.gettempdir(), "gammawhisper_temp.wav")
 
 
@@ -59,77 +59,123 @@ def audio_callback(indata, frames, time_info, status):
 
 
 def enable_sigint_handler():
-    """Ensure Python SIGINT (Ctrl+C) is processed while Qt event loop runs."""
+    """Allow Ctrl+C handling while Qt event loop runs."""
     timer = QtCore.QTimer()
-    timer.timeout.connect(lambda: None)  # dummy slot
-    timer.start(100)  # every 100ms
+    timer.timeout.connect(lambda: None)
+    timer.start(100)
     return timer
 
 
 # -------------------------------------------------------------------
-# MAIN TRANSPARENT WINDOW
+# MAIN BUBBLE WINDOW
 # -------------------------------------------------------------------
 class BubbleWindow(QtWidgets.QWidget):
     hotkey_trigger = QtCore.pyqtSignal()
-    copy_to_clipboard = QtCore.pyqtSignal(str)  # NEW SIGNAL FOR SAFE CLIPBOARD ACCESS
+    copy_to_clipboard = QtCore.pyqtSignal(str)
 
     def __init__(self, width=220, height=140):
-        super().__init__(None, QtCore.Qt.FramelessWindowHint | QtCore.Qt.Tool)
-
-        # Window setup
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
-        self.setWindowFlags(
-            QtCore.Qt.FramelessWindowHint
-            | QtCore.Qt.Tool
-            | QtCore.Qt.WindowStaysOnTopHint
+        super().__init__(
+            None,
+            QtCore.Qt.FramelessWindowHint | QtCore.Qt.Tool | QtCore.Qt.WindowStaysOnTopHint
         )
+
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
         self.resize(width, height)
 
         # Layout
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
 
-        # Web content
+        # Web UI
         self.view = QtWebEngineWidgets.QWebEngineView(self)
-        self.view.setStyleSheet("background: transparent;")
+        self.view.setContextMenuPolicy(QtCore.Qt.NoContextMenu)
         self.view.page().setBackgroundColor(QtCore.Qt.transparent)
         self.view.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
         layout.addWidget(self.view)
-
-        # Load bubble UI
         self.view.load(QtCore.QUrl("http://127.0.0.1:5000/bubble"))
 
-        # Connect hotkey activation
+        # Signals
         self.hotkey_trigger.connect(lambda: toggle_action(self))
-
-        # Connect clipboard signal to GUI-safe handler
         self.copy_to_clipboard.connect(self._copy_text)
 
-        # Position bubble at bottom center of screen
+        # Position bubble
         screen = QtWidgets.QApplication.primaryScreen()
         rect = screen.availableGeometry()
-        x = rect.center().x() - (self.width() // 2)
-        y = rect.bottom() - 30  # adjust offset above taskbar
-        self.move(x, y)
+        self.move(rect.center().x() - width // 2 + 100, rect.top() - 30)
 
     def _copy_text(self, text):
-        """Clipboard updates MUST run on the GUI thread (Qt signal)."""
-        QtWidgets.QApplication.clipboard().setText(text)
+        QtGui.QGuiApplication.clipboard().setText(text)
         print("Clipboard updated:", text)
+
+    def contextMenuEvent(self, event):
+        menu = QtWidgets.QMenu(self)
+
+        cfg = self.fetch_config()
+        current_device = cfg.get("device", "cpu")
+        current_model = cfg.get("model", "")
+        models = cfg.get("models", [])
+
+        # Device submenu
+        device_menu = menu.addMenu("Set Device")
+        cpu_action = device_menu.addAction("CPU")
+        cuda_action = device_menu.addAction("CUDA")
+
+        cpu_action.setCheckable(True)
+        cuda_action.setCheckable(True)
+        cpu_action.setChecked(current_device == "cpu")
+        cuda_action.setChecked(current_device == "cuda")
+
+        # Model submenu
+        model_menu = menu.addMenu("Set Model")
+        for m in models:
+            action = model_menu.addAction(m)
+            action.setCheckable(True)
+            action.setChecked(m == current_model)
+            action.triggered.connect(partial(self.change_model, m))
+
+        exit_action = menu.addAction("Exit")
+        selected = menu.exec_(self.mapToGlobal(event.pos()))
+
+        if selected == exit_action:
+            shutdown_event.set()
+            QtWidgets.QApplication.quit()
+        elif selected == cpu_action:
+            self.set_device_request("cpu")
+        elif selected == cuda_action:
+            self.set_device_request("cuda")
+
+    # ----------------------
+    # Server communication
+    # ----------------------
+    def fetch_config(self):
+        try:
+            return requests.get("http://127.0.0.1:5000/get_config").json()
+        except:
+            return {"device": "cpu", "model": "", "models": []}
+
+    def set_device_request(self, dev):
+        try:
+            requests.post("http://127.0.0.1:5000/set_device", json={"device": dev})
+            print(f"Device changed to: {dev}")
+        except Exception as e:
+            print("Failed to set device:", e)
+
+    def change_model(self, model_name):
+        try:
+            requests.post("http://127.0.0.1:5000/set_model", json={"model": model_name})
+            print(f"Model changed to: {model_name}")
+        except Exception as e:
+            print("Failed to change model:", e)
 
 
 # -------------------------------------------------------------------
-# RECORDING / JS INTERACTION
+# RECORDING + TRANSCRIPTION PIPELINE
 # -------------------------------------------------------------------
 def start_recording(view):
     global stream, buffer
     buffer = []
-    stream = sd.InputStream(
-        samplerate=samplerate,
-        channels=channels,
-        callback=audio_callback,
-    )
+
+    stream = sd.InputStream(samplerate=samplerate, channels=channels, callback=audio_callback)
     stream.start()
 
     view.view.page().runJavaScript(
@@ -137,6 +183,28 @@ def start_recording(view):
         'document.getElementById("status").textContent="Listening";'
         "startWaveform();"
     )
+
+
+def type_text(text):
+    """Simulate typing text using WinAPI."""
+    for ch in text:
+        if ch == "\n":
+            user32.keybd_event(0x0D, 0, 0, 0)
+            user32.keybd_event(0x0D, 0, 2, 0)
+            continue
+
+        vk = user32.VkKeyScanW(ord(ch))
+        shift = (vk >> 8) & 1
+        vk &= 0xFF
+
+        if shift:
+            user32.keybd_event(0x10, 0, 0, 0)
+
+        user32.keybd_event(vk, 0, 0, 0)
+        user32.keybd_event(vk, 0, 2, 0)
+
+        if shift:
+            user32.keybd_event(0x10, 0, 2, 0)
 
 
 def stop_recording_and_transcribe(view):
@@ -159,14 +227,11 @@ def stop_recording_and_transcribe(view):
     try:
         if os.path.exists(temp_path):
             with open(temp_path, "rb") as f:
-                res = requests.post(
-                    "http://127.0.0.1:5000/transcribe", files={"file": f}
-                )
-                data = res.json()
-                text = data.get("text", "") if data else ""
+                res = requests.post("http://127.0.0.1:5000/transcribe", files={"file": f})
+                text = (res.json() or {}).get("text", "")
 
-                # COPY TO CLIPBOARD SAFELY (GUI THREAD)
                 view.copy_to_clipboard.emit(text)
+                threading.Thread(target=type_text, args=(text,), daemon=True).start()
 
         view.view.page().runJavaScript('window.postMessage({type:"reset"}, "*");')
 
@@ -178,8 +243,11 @@ def stop_recording_and_transcribe(view):
         view.view.page().runJavaScript('window.postMessage({type:"reset"}, "*");')
 
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except:
+            pass
 
 
 def toggle_action(view):
@@ -189,13 +257,11 @@ def toggle_action(view):
         start_recording(view)
     else:
         is_recording = False
-        threading.Thread(
-            target=stop_recording_and_transcribe, args=(view,), daemon=True
-        ).start()
+        threading.Thread(target=stop_recording_and_transcribe, args=(view,), daemon=True).start()
 
 
 # -------------------------------------------------------------------
-# HOTKEY LISTENER THREAD
+# HOTKEY LISTENER
 # -------------------------------------------------------------------
 def hotkey_listener(emitter: BubbleWindow):
     if not user32.RegisterHotKey(None, HOTKEY_ID, MOD_ALT, VK_NUMPAD0):
@@ -208,6 +274,7 @@ def hotkey_listener(emitter: BubbleWindow):
         if user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
             if msg.message == WM_HOTKEY and msg.wParam == HOTKEY_ID:
                 emitter.hotkey_trigger.emit()
+
             user32.TranslateMessage(ctypes.byref(msg))
             user32.DispatchMessageW(ctypes.byref(msg))
 
@@ -217,7 +284,7 @@ def hotkey_listener(emitter: BubbleWindow):
 
 
 # -------------------------------------------------------------------
-# HANDLE CTRL+C CLEANLY
+# CLEAN EXIT HANDLER
 # -------------------------------------------------------------------
 def handle_sigint(signum, frame):
     print("Shutting down...")
@@ -229,7 +296,7 @@ signal.signal(signal.SIGINT, handle_sigint)
 
 
 # -------------------------------------------------------------------
-# MAIN
+# MAIN ENTRY
 # -------------------------------------------------------------------
 if __name__ == "__main__":
     threading.Thread(target=start_flask, daemon=True).start()
@@ -240,10 +307,8 @@ if __name__ == "__main__":
     bubble = BubbleWindow()
     bubble.show()
 
-    # Start hotkey listener thread
     threading.Thread(target=hotkey_listener, args=(bubble,), daemon=True).start()
 
-    # Keep Python signals alive inside Qt loop
-    sigint_timer = enable_sigint_handler()
+    enable_sigint_handler()
 
     sys.exit(app_qt.exec_())
