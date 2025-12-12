@@ -30,7 +30,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(BASE_DIR, "flask_gui")
 sys.path.append(APP_DIR)
 
-from flask_gui.server import app  # noqa: E402
+from flask_gui.server import app
 
 
 # -------------------------------------------------------------------
@@ -59,7 +59,6 @@ def audio_callback(indata, frames, time_info, status):
 
 
 def enable_sigint_handler():
-    """Allow Ctrl+C handling while Qt event loop runs."""
     timer = QtCore.QTimer()
     timer.timeout.connect(lambda: None)
     timer.start(100)
@@ -76,17 +75,17 @@ class BubbleWindow(QtWidgets.QWidget):
     def __init__(self, width=220, height=140):
         super().__init__(
             None,
-            QtCore.Qt.FramelessWindowHint | QtCore.Qt.Tool | QtCore.Qt.WindowStaysOnTopHint
+            QtCore.Qt.FramelessWindowHint
+            | QtCore.Qt.Tool
+            | QtCore.Qt.WindowStaysOnTopHint
         )
 
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
         self.resize(width, height)
 
-        # Layout
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Web UI
         self.view = QtWebEngineWidgets.QWebEngineView(self)
         self.view.setContextMenuPolicy(QtCore.Qt.NoContextMenu)
         self.view.page().setBackgroundColor(QtCore.Qt.transparent)
@@ -94,11 +93,9 @@ class BubbleWindow(QtWidgets.QWidget):
         layout.addWidget(self.view)
         self.view.load(QtCore.QUrl("http://127.0.0.1:5000/bubble"))
 
-        # Signals
         self.hotkey_trigger.connect(lambda: toggle_action(self))
         self.copy_to_clipboard.connect(self._copy_text)
 
-        # Position bubble
         screen = QtWidgets.QApplication.primaryScreen()
         rect = screen.availableGeometry()
         self.move(rect.center().x() - width // 2 + 100, rect.top() - 30)
@@ -175,7 +172,11 @@ def start_recording(view):
     global stream, buffer
     buffer = []
 
-    stream = sd.InputStream(samplerate=samplerate, channels=channels, callback=audio_callback)
+    stream = sd.InputStream(
+        samplerate=samplerate,
+        channels=channels,
+        callback=audio_callback
+    )
     stream.start()
 
     view.view.page().runJavaScript(
@@ -185,28 +186,23 @@ def start_recording(view):
     )
 
 
-def type_text(text):
-    """Simulate typing text using WinAPI."""
-    for ch in text:
-        if ch == "\n":
-            user32.keybd_event(0x0D, 0, 0, 0)
-            user32.keybd_event(0x0D, 0, 2, 0)
-            continue
-
-        vk = user32.VkKeyScanW(ord(ch))
-        shift = (vk >> 8) & 1
-        vk &= 0xFF
-
-        if shift:
-            user32.keybd_event(0x10, 0, 0, 0)
-
-        user32.keybd_event(vk, 0, 0, 0)
-        user32.keybd_event(vk, 0, 2, 0)
-
-        if shift:
-            user32.keybd_event(0x10, 0, 2, 0)
+# -------------------------------------------------------------------
+# PASTE FUNCTION (Better than typing)
+# -------------------------------------------------------------------
+def paste_text():
+    """Simulate Ctrl+V paste."""
+    # CTRL down
+    user32.keybd_event(0x11, 0, 0, 0)
+    # V down/up
+    user32.keybd_event(0x56, 0, 0, 0)
+    user32.keybd_event(0x56, 0, 2, 0)
+    # CTRL up
+    user32.keybd_event(0x11, 0, 2, 0)
 
 
+# -------------------------------------------------------------------
+# TRANSCRIBE + AUTO-PASTE
+# -------------------------------------------------------------------
 def stop_recording_and_transcribe(view):
     global stream, buffer
 
@@ -227,11 +223,14 @@ def stop_recording_and_transcribe(view):
     try:
         if os.path.exists(temp_path):
             with open(temp_path, "rb") as f:
-                res = requests.post("http://127.0.0.1:5000/transcribe", files={"file": f})
+                res = requests.post(
+                    "http://127.0.0.1:5000/transcribe",
+                    files={"file": f}
+                )
                 text = (res.json() or {}).get("text", "")
 
                 view.copy_to_clipboard.emit(text)
-                threading.Thread(target=type_text, args=(text,), daemon=True).start()
+                threading.Thread(target=paste_text, daemon=True).start()
 
         view.view.page().runJavaScript('window.postMessage({type:"reset"}, "*");')
 
@@ -257,7 +256,11 @@ def toggle_action(view):
         start_recording(view)
     else:
         is_recording = False
-        threading.Thread(target=stop_recording_and_transcribe, args=(view,), daemon=True).start()
+        threading.Thread(
+            target=stop_recording_and_transcribe,
+            args=(view,),
+            daemon=True
+        ).start()
 
 
 # -------------------------------------------------------------------
@@ -284,7 +287,7 @@ def hotkey_listener(emitter: BubbleWindow):
 
 
 # -------------------------------------------------------------------
-# CLEAN EXIT HANDLER
+# CLEAN EXIT
 # -------------------------------------------------------------------
 def handle_sigint(signum, frame):
     print("Shutting down...")
@@ -296,7 +299,7 @@ signal.signal(signal.SIGINT, handle_sigint)
 
 
 # -------------------------------------------------------------------
-# MAIN ENTRY
+# MAIN
 # -------------------------------------------------------------------
 if __name__ == "__main__":
     threading.Thread(target=start_flask, daemon=True).start()
@@ -308,7 +311,6 @@ if __name__ == "__main__":
     bubble.show()
 
     threading.Thread(target=hotkey_listener, args=(bubble,), daemon=True).start()
-
     enable_sigint_handler()
 
     sys.exit(app_qt.exec_())
