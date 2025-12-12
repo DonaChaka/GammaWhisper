@@ -1,5 +1,5 @@
 # Utility
-Compared to paid Whisper spinoffs like SuperWhisper and Whispr Flow, GammaWhisper will provide you satisfying and comparable transcribing experience. You can use large-turbo whisper model to get excellent transcription and maybe if you want, add the post-processing by qwen2.5-1.5b-instruct into the mix. That would give you Whispr Flow equivalent results. UI gives you option to do this pretty neatly. The UI stays as a small bubble at the top of your screen minding it's own business. You just press shortcut Alt+S to activate listening and transcribing.
+Compared to paid Whisper spinoffs like SuperWhisper and Whispr Flow, GammaWhisper will provide you satisfying and comparable transcribing experience. You can use large-turbo whisper model to get excellent transcription and maybe if you want, add the post-processing by qwen2.5-1.5b-instruct into the mix. That would give you Whispr Flow equivalent results. UI gives you option to do this pretty neatly. UI stays as a small bubble at the top of your screen minding it's own business. You just press shortcut Alt+S to activate listening and transcribing.
 
 ## Base Installation:
 
