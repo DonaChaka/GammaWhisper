@@ -6,6 +6,7 @@
 
 # Runtime files
 flask_gui/transcripts/
+flask_gui/logs/
 
 # Python cache
 __pycache__/

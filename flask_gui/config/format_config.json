@@ -1,0 +1,16 @@
+{
+  "formats": {
+    "disable": {
+      "enabled": false
+    },
+    "qwen_small": {
+      "enabled": true,
+      "model": "qwen2.5:1.5b-instruct",
+      "system_prompt": "You are a transcription post-processor. Improve clarity without changing meaning.",
+      "options": {
+        "temperature": 0.0,
+        "top_p": 1.0
+      }
+    }
+  }
+}

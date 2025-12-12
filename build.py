@@ -25,6 +25,8 @@ icon_path = os.path.join(current_dir, "icons", "gamma_whisper.ico")
 
 flask_gui_path = os.path.join(current_dir, "flask_gui")
 models_path = os.path.join(flask_gui_path, "models")
+format_config_path = os.path.join(flask_gui_path, "config")
+log_dir = os.path.join(flask_gui_path, "logs")
 
 # Locate Whisper assets inside site-packages
 # Adjust if venv path differs
@@ -34,6 +36,7 @@ whisper_assets_path = os.path.join(os.path.dirname(whisper.__file__), "assets")
 # --- Ensure folders exist ---
 os.makedirs(build_dir, exist_ok=True)
 os.makedirs(dist_dir, exist_ok=True)
+os.makedirs(log_dir, exist_ok=True)
 
 # --- PyInstaller Command ---
 command = [
@@ -50,6 +53,7 @@ command = [
     f"--add-data={os.path.join(flask_gui_path, 'templates')}{os.pathsep}templates",
     f"--add-data={os.path.join(flask_gui_path, 'static')}{os.pathsep}static",
     f"--add-data={os.path.join(flask_gui_path, 'transcripts')}{os.pathsep}transcripts",
+    f"--add-data={os.path.join(flask_gui_path, 'logs')}{os.pathsep}logs",
 
     # Include Whisper models
     f"--add-data={os.path.join(models_path, 'base.en.pt')}{os.pathsep}models",
@@ -60,6 +64,9 @@ command = [
 
     # Include Whisper assets (mel_filters.npz etc.)
     f"--add-data={whisper_assets_path}{os.pathsep}whisper/assets",
+
+    # Include Format model config (format_config.json)
+    f"--add-data={os.path.join(format_config_path, 'format_config.json')}{os.pathsep}config",
 
     script_name
 ]
